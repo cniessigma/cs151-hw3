@@ -23,7 +23,7 @@ class D_Node(object):
 	and can be used to generate the most information gaining split. Assumes all data vectors
 	are the same size
 	"""
-	def __init__(self, data_set, build_subtree = False, depth = 1):
+	def __init__(self, data_set, build_subtree = False, depth = 1, tree = None):
 		self.data_set = data_set
 		self.depth = depth
 		self.vector_size = len(data_set[0][0])
@@ -77,6 +77,7 @@ class D_Node(object):
 		unique_labels, counts = np.unique([tup[1] for tup in data_set], return_counts=True)
 		if len(unique_labels) > 1 and data_set_in is None:
 			self.is_pure = False
+			self.decision = max(unique_labels, key= lambda l : counts[unique_labels.tolist().index(l)])
 		elif len(unique_labels == 1) and data_set_in is None:
 			self.is_pure = True
 			self.decision = unique_labels[0]
@@ -127,7 +128,7 @@ class D_Node(object):
 		if self.is_pure:
 			return '%d: Selecting %d' % (self.depth, self.decision)
 		else:
-			return '%d: Is Feature %d <= %f' % (self.depth, self.feature + 1, self.threshold) 
+			return '%d: Is Feature %d <= %f (Majority %d)' % (self.depth, self.feature + 1, self.threshold, self.decision) 
 
 
 class D_Tree(object):
@@ -136,43 +137,96 @@ class D_Tree(object):
 	"""
 	def __init__(self, data_set):
 		self.data_set = data_set
-		self.root = D_Node(data_set, build_subtree = True)
+		self.root = D_Node(data_set, build_subtree = True, tree = self)
 
 	def classify(self, data_in):
-		return self.root.classify(data_in)
+		n = self.root
+		while n:
+			if n.is_pure:
+				return n.decision
+			if data_in[n.feature] <= n.threshold:
+				n = n.left_child
+			else:
+				n = n.right_child
+
+
+
+	def error(self, validation_data, pruning_node = None):
+		total = len(validation_data)
+		hits = 0.0
+		misses = 0.0
+		for vector, label in validation_data:
+			n = self.root
+			while n:
+				# If this is the node we are testing for pruning,
+				# stop the classification here and predict the majority
+				# label in n
+				if n is pruning_node and n is not None:
+					if n.decision == label:
+						hits += 1.0
+					else:
+						misses += 1.0
+					break
+				if n.is_pure:
+					if n.decision == label:
+						hits += 1.0
+					else:
+						misses += 1.0
+					break
+				if vector[n.feature] <= n.threshold:
+					n = n.left_child
+				else:
+					n = n.right_child
+		return (misses / total)
+
+
+	def prune_tree(self, validation_data, prune_once = True):
+		bfs_queue = [tree.root]
+		tree_error = self.error(validation_data)
+		while bfs_queue:
+			n = bfs_queue[0]
+
+			pruned_error = self.error(validation_data, n)
+
+			if pruned_error < tree_error:
+				print str(n)
+				print pruned_error, '<', tree_error
+				n.is_pure = True
+				n.left_child = None
+				n.right_child = None
+				tree_error = pruned_error
+				if prune_once:
+					return
+
+			if not n.is_pure:
+				bfs_queue.append(n.left_child)
+				bfs_queue.append(n.right_child)
+
+			bfs_queue.pop(0)
+
+
 
 
 
 if __name__ == '__main__':
-	data = read_data(Data.fdir, Data.training, Data.vector_size)
+	training_data = read_data(Data.fdir, Data.training, Data.vector_size)
 	test_data = read_data(Data.fdir, Data.testing, Data.vector_size)
+	validation_data = read_data(Data.fdir, Data.validate, Data.vector_size)
 
-	tree = D_Tree(data)
+	tree = D_Tree(training_data)
 
-	total = len(data)
-	hits = 0.0
-	misses = 0.0
-	for vector, label in data:
-		predicted_label = tree.classify(vector)
-		if predicted_label == label:
-			hits += 1.0
-		else:
-			misses += 1.0
+	print 'Training Error: %f' % tree.error(training_data)
+	print 'Testing Error: %f' % tree.error(test_data)
 
-	print 'Training Error: %f' % ((float(misses) / float(total)))
+	tree.prune_tree(validation_data)
 
+	print 'Training Error: %f' % tree.error(training_data)
+	print 'Testing Error: %f' % tree.error(test_data)
+	
+	tree.prune_tree(validation_data)
 
-	total = len(test_data)
-	hits = 0.0
-	misses = 0.0
-	for vector, label in test_data:
-		predicted_label = tree.classify(vector)
-		if predicted_label == label:
-			hits += 1.0
-		else:
-			misses += 1.0
-
-	print 'Test Error: %f' % ((float(misses) / float(total)))
+	print 'Training Error: %f' % tree.error(training_data)
+	print 'Testing Error: %f' % tree.error(test_data)
 
 
 
