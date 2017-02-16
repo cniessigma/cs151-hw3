@@ -115,11 +115,19 @@ class D_Node(object):
 
 		return (best_threshold, min_entropy)
 
+	def classify(self, data_in):
+		if self.is_pure:
+			return self.decision
+		if data_in[self.feature] <= self.threshold:
+			return self.left_child.classify(data_in)
+		else:
+			return self.right_child.classify(data_in)
+
 	def __str__(self):
 		if self.is_pure:
 			return '%d: Selecting %d' % (self.depth, self.decision)
 		else:
-			return '%d: Is x_%d <= %f' % (self.depth, self.feature, self.threshold) 
+			return '%d: Is Feature %d <= %f' % (self.depth, self.feature + 1, self.threshold) 
 
 
 class D_Tree(object):
@@ -130,20 +138,42 @@ class D_Tree(object):
 		self.data_set = data_set
 		self.root = D_Node(data_set, build_subtree = True)
 
+	def classify(self, data_in):
+		return self.root.classify(data_in)
+
 
 
 if __name__ == '__main__':
 	data = read_data(Data.fdir, Data.training, Data.vector_size)
+	test_data = read_data(Data.fdir, Data.testing, Data.vector_size)
+
 	tree = D_Tree(data)
-	q = [tree.root]
-	while q:
-		n = q[0]
-		if n.depth > 3:
-			break
-		print str(n)
-		q.append(n.left_child)
-		q.append(n.right_child)
-		q.pop(0)
+
+	total = len(data)
+	hits = 0.0
+	misses = 0.0
+	for vector, label in data:
+		predicted_label = tree.classify(vector)
+		if predicted_label == label:
+			hits += 1.0
+		else:
+			misses += 1.0
+
+	print 'Training Error: %f' % ((float(misses) / float(total)))
+
+
+	total = len(test_data)
+	hits = 0.0
+	misses = 0.0
+	for vector, label in test_data:
+		predicted_label = tree.classify(vector)
+		if predicted_label == label:
+			hits += 1.0
+		else:
+			misses += 1.0
+
+	print 'Test Error: %f' % ((float(misses) / float(total)))
+
 
 
 
